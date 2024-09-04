@@ -1,0 +1,48 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.245.2/containers/docker-existing-docker-compose
+// If you want to run as a non-root user in the container, see .devcontainer/docker-compose.yml.
+{
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go"
+      ],
+      "settings": {
+        "search.useIgnoreFiles": false, // Allow search to look at all folders even if they are in .gitignore
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/bin/zsh"
+          }
+        }
+      }
+    }
+  },
+  "dockerComposeFile": "../.docker/docker-compose.yml",
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "latest"
+    },
+    "ghcr.io/audacioustux/devcontainers/taskfile:1": {
+      "version": "latest"
+    },
+    "ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {
+      "version": 15
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    }
+  },
+  "forwardPorts": [
+    "postgres:5432",
+    5050,
+    8080
+  ],
+  "initializeCommand": ".devcontainer/init.sh",
+  "name": "GoChat",
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+  "postCreateCommand": ".devcontainer/create.sh",
+  "service": "dev-app",
+  "shutdownAction": "stopCompose",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
+}

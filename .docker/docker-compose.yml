@@ -1,0 +1,29 @@
+name: go-chat
+volumes:
+  postgres_volume:
+    name: go-chat_postgres_volume
+  pga-data:
+    name: go-chat_pga_data
+
+services:
+  dev-app:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: dev-app
+    volumes:
+      - ../:/workspaces/go-chat:cached
+    ports:
+      - "8080:8080"
+    command: sleep infinity
+
+  postgres:
+    image: postgres:15
+    volumes:
+      - postgres_volume:/var/lib/postgresql/data
+      - ./postgres-dev-init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
