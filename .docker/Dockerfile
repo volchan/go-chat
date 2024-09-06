@@ -5,3 +5,5 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
   && touch /commandhistory/.zsh_history \
   && chown -R vscode /commandhistory \
   && echo "$SNIPPET" >> "/home/vscode/.zshrc"
+
+RUN go install github.com/air-verse/air@latest

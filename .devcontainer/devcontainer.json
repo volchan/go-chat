@@ -5,7 +5,10 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "golang.Go"
+        "golang.Go",
+        "tamasfe.even-better-toml",
+        "otovo-oss.htmx-tags",
+        "jinliming2.vscode-go-template"
       ],
       "settings": {
         "search.useIgnoreFiles": false, // Allow search to look at all folders even if they are in .gitignore
