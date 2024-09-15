@@ -1,155 +1,111 @@
 package main
 
 import (
-	"html/template"
-	"io"
-	"net/http"
+	"fmt"
+	"log"
+	"sync"
 
-	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/gofiber/contrib/websocket"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/monitor"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 )
 
-type Templates struct {
-	templates *template.Template
+type client struct {
+	isClosing bool
+	mu        sync.Mutex
 }
 
-func (t *Templates) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
-	return t.templates.ExecuteTemplate(w, name, data)
-}
+var clients = make(map[*websocket.Conn]*client)
+var register = make(chan *websocket.Conn)
+var broadcast = make(chan string)
+var unregister = make(chan *websocket.Conn)
 
-func newTemplate() *Templates {
-	return &Templates{
-		templates: template.Must(template.ParseGlob("views/*.html")),
-	}
-}
+func runHub() {
+	for {
+		select {
+		case connection := <-register:
+			clients[connection] = &client{}
+			fmt.Println("connection registered")
 
-type Contact struct {
-	Id       uuid.UUID
-	Username string
-	Email    string
-}
+		case message := <-broadcast:
+			fmt.Println("message received:", message)
+			// Send the message to all clients
+			for connection, c := range clients {
+				go func(connection *websocket.Conn, c *client) { // send to each client in parallel so we don't block on a slow client
+					c.mu.Lock()
+					defer c.mu.Unlock()
+					if c.isClosing {
+						return
+					}
+					if err := connection.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+						c.isClosing = true
+						fmt.Println("write error:", err)
 
-func newContact(username, email string) *Contact {
-	id := uuid.New()
-	return &Contact{
-		Id:       id,
-		Username: username,
-		Email:    email,
-	}
-}
+						connection.WriteMessage(websocket.CloseMessage, []byte{})
+						connection.Close()
+						unregister <- connection
+					}
+				}(connection, c)
+			}
 
-type Contacts = []Contact
+		case connection := <-unregister:
+			// Remove the client from the hub
+			delete(clients, connection)
 
-type Data struct {
-	Contacts Contacts
-}
-
-func (d *Data) indexOf(id string) int {
-	for i, contact := range d.Contacts {
-		if contact.Id.String() == id {
-			return i
+			fmt.Println("connection unregistered")
 		}
-	}
-	return -1
-}
-
-func newData() *Data {
-	return &Data{
-		Contacts: []Contact{
-			*newContact("John Doe", "jd@gmail.com"),
-			*newContact("Claire Doe", "cd@gmail.com"),
-		},
-	}
-}
-
-func (d *Data) hasEmail(email string) bool {
-	for _, contact := range d.Contacts {
-		if contact.Email == email {
-			return true
-		}
-	}
-	return false
-}
-
-type FormData struct {
-	Values map[string]string
-	Errors map[string]string
-}
-
-func newFormData() *FormData {
-	return &FormData{
-		Values: map[string]string{},
-		Errors: map[string]string{},
-	}
-}
-
-type Page struct {
-	Title string
-	Data  *Data
-	Form  *FormData
-}
-
-func newPage(title string, data *Data, form *FormData) *Page {
-	return &Page{
-		Title: title,
-		Data:  data,
-		Form:  form,
 	}
 }
 
 func main() {
-	e := echo.New()
+	app := fiber.New()
 
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
+	app.Use(recover.New())
+	app.Use(requestid.New())
+	app.Use(logger.New())
 
-	e.Static("/css", "css")
-	e.Static("/images", "images")
+	go runHub()
 
-	e.Renderer = newTemplate()
+	app.Get("/metrics", monitor.New())
 
-	page := newPage("Contacts", newData(), newFormData())
-
-	e.GET("/", func(c echo.Context) error {
-		return c.Render(http.StatusOK, "index", page)
-	})
-
-	e.POST("/contacts", func(c echo.Context) error {
-		username := c.FormValue("username")
-		email := c.FormValue("email")
-
-		data := page.Data
-
-		if page.Data.hasEmail(email) {
-			formData := newFormData()
-			formData.Values["Username"] = username
-			formData.Values["Email"] = email
-			formData.Errors["Email"] = "Email already exists"
-			c.Logger().Error(formData)
-			return c.Render(http.StatusUnprocessableEntity, "form", formData)
+	app.Use(func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) { // Returns true if the client requested upgrade to the WebSocket protocol
+			return c.Next()
 		}
-
-		contact := newContact(username, email)
-		c.Logger().Error(data.Contacts)
-		data.Contacts = append(data.Contacts, *contact)
-		c.Logger().Error(data.Contacts)
-		c.Render(http.StatusOK, "form", newFormData())
-		return c.Render(http.StatusOK, "oob-contact", contact)
+		return c.SendStatus(fiber.StatusUpgradeRequired)
 	})
 
-	e.DELETE("/contacts/:id", func(c echo.Context) error {
-		id := c.Param("id")
-		data := page.Data
-		index := data.indexOf(id)
+	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		// When the function returns, unregister the client and close the connection
+		defer func() {
+			unregister <- c
+			c.Close()
+		}()
 
-		if index == -1 {
-			return c.String(http.StatusNotFound, "Contact not found")
+		// Register the client
+		register <- c
+
+		for {
+			messageType, message, err := c.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					fmt.Println("read error:", err)
+				}
+
+				return // Calls the deferred function, i.e. closes the connection on error
+			}
+
+			if messageType == websocket.TextMessage {
+				// Broadcast the received message
+				broadcast <- string(message)
+			} else {
+				fmt.Println("websocket message received of type", messageType)
+			}
 		}
+	}))
 
-		data.Contacts = append(data.Contacts[:index], data.Contacts[index+1:]...)
-		return c.NoContent(http.StatusOK)
-	})
-
-	e.Logger.Fatal(e.Start(":3000"))
+	log.Fatalln(app.Listen(":8080"))
 }

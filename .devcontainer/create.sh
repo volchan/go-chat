@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Setup Air, GO hot reload
+go install github.com/air-verse/air@latest
+
 # Setup SSH config
 echo "Setting up SSH config..."
 default_ssh_config_filename=".devcontainer/ssh-config"

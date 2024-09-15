@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Chat App</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f7f7f7;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #fff;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    .input-group {
+      display: flex;
+      margin-bottom: 20px;
+    }
+
+    #input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+
+    #send-button {
+      padding: 10px 20px;
+      background-color: #4caf50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    li {
+      background-color: #fff;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Chat App</h1>
+    <div class="input-group">
+      <input id="input" type="text" placeholder="Type your message here">
+      <button id="send-button" onclick="sendMessage()">Send</button>
+    </div>
+    <ul id="messages"></ul>
+  </div>
+
+  <script>
+    const messages = document.getElementById('messages');
+    const input = document.getElementById('input');
+
+    // Establish a WebSocket connection to the server
+    const ws = new WebSocket('ws://localhost:8000/ws');
+
+    // Receive incoming messages and add them to the chat window
+    ws.onmessage = (event) => {
+      const li = document.createElement('li');
+      li.innerText = event.data;
+      messages.appendChild(li);
+    };
+
+    // Send user messages to the server
+    const sendMessage = () => {
+      ws.send(input.value);
+      input.value = '';
+    }
+  </script>
+</body>
+
+</html>
